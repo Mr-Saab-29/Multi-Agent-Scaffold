@@ -1,0 +1,8 @@
+[
+  {"id": "todo", "prompt": "Build a todo app with projects, tasks, and due dates"},
+  {"id": "crm", "prompt": "Build a CRM app for freelancers to track leads and clients"},
+  {"id": "expense", "prompt": "Build an expense tracker for teams with approvals and monthly reports"},
+  {"id": "admin", "prompt": "Build an admin dashboard for user management and audit logs"},
+  {"id": "booking", "prompt": "Build a booking tool for fitness trainers and clients"},
+  {"id": "warehouse", "prompt": "Build a warehouse operations tracker for inventory, picking, and shipping"}
+]
