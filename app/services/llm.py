@@ -41,7 +41,7 @@ class LLMClient:
     def fallback_reason(self) -> str | None:
         return self._fallback_reason
 
-    def generate_json(self, system_prompt: str, user_prompt: str) -> dict:
+    def generate_json(self, system_prompt: str, user_prompt: str, model: str | None = None) -> dict:
         if self._backend == "fallback":
             return self._fallback_json(system_prompt=system_prompt, user_prompt=user_prompt)
 
@@ -51,20 +51,20 @@ class LLMClient:
                 "Return strict JSON only. Do not wrap in markdown fences.\n\n"
                 f"User input:\n{user_prompt}"
             )
-            response = self._generate_content_with_retry(prompt)
+            response = self._generate_content_with_retry(prompt, model=model)
             raw = (response.text or "").strip()
             return self._parse_json(raw)
         except Exception as exc:  # noqa: BLE001
             self._switch_to_fallback(reason=f"Gemini request failed: {type(exc).__name__}: {exc}")
             return self._fallback_json(system_prompt=system_prompt, user_prompt=user_prompt)
 
-    def generate_text(self, system_prompt: str, user_prompt: str) -> LLMResponse:
+    def generate_text(self, system_prompt: str, user_prompt: str, model: str | None = None) -> LLMResponse:
         if self._backend == "fallback":
             return LLMResponse(text=f"{system_prompt}\n\n{user_prompt}")
 
         try:
             prompt = f"{system_prompt}\n\n{user_prompt}"
-            response = self._generate_content_with_retry(prompt)
+            response = self._generate_content_with_retry(prompt, model=model)
             return LLMResponse(text=(response.text or "").strip())
         except Exception as exc:  # noqa: BLE001
             self._switch_to_fallback(reason=f"Gemini request failed: {type(exc).__name__}: {exc}")
@@ -108,16 +108,17 @@ class LLMClient:
         self._fallback_reason = reason
         self._client = None
 
-    def _generate_content_with_retry(self, prompt: str):
+    def _generate_content_with_retry(self, prompt: str, model: str | None = None):
         retries = max(0, self._settings.gemini_max_retries)
         base_delay = max(0.0, self._settings.gemini_retry_base_delay_seconds)
         max_delay = max(base_delay, self._settings.gemini_retry_max_delay_seconds)
+        target_model = model or self._settings.gemini_model
 
         last_exc: Exception | None = None
         for attempt in range(retries + 1):
             try:
                 return self._client.models.generate_content(
-                    model=self._settings.gemini_model,
+                    model=target_model,
                     contents=prompt,
                 )
             except Exception as exc:  # noqa: BLE001

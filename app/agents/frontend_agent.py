@@ -20,9 +20,14 @@ class FrontendAgent:
         retrieval_output: RetrievalOutput,
         reviewer_feedback: list[str] | None = None,
         artifact_prefix: str = "05_frontend",
+        model_override: str | None = None,
     ) -> FrontendOutput:
         system_prompt = self._prompts.load("frontend_agent.md")
-        _ = self._llm.generate_json(system_prompt=system_prompt, user_prompt=planner_output.model_dump_json())
+        _ = self._llm.generate_json(
+            system_prompt=system_prompt,
+            user_prompt=planner_output.model_dump_json(),
+            model=model_override,
+        )
 
         screens = [
             ScreenSpec(

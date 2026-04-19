@@ -3,20 +3,24 @@ from pathlib import Path
 from uuid import uuid4
 
 from app.agents.api_agent import APIAgent
-from app.agents.architect import ArchitectAgent
+from app.agents.architect import ArchitectAgent, _to_architecture_markdown
 from app.agents.codegen import CodegenAgent
 from app.agents.frontend_agent import FrontendAgent
-from app.agents.planner import PlannerAgent
+from app.agents.planner import PlannerAgent, _to_requirements_markdown
 from app.agents.reviewer import ReviewerAgent
 from app.agents.schema_agent import SchemaAgent
 from app.core.config import get_settings
+from app.models.architect_models import ArchitectOutput
+from app.models.planner_models import PlannerOutput
 from app.models.review_models import ReviewOutput
+from app.models.schema_models import SchemaOutput
 from app.models.validation_models import ValidationSummary
 from app.orchestrator.graph import day2_graph
 from app.orchestrator.state import ArtifactManifest, RunState
 from app.services.artifact_store import ArtifactStore
 from app.services.llm import LLMClient
 from app.services.prompt_loader import PromptLoader
+from app.services.stage_cache import StageCache
 from app.tools.api_checker import APIChecker
 from app.tools.packager import RunPackager
 from app.tools.retrieval import LocalTemplateRetriever
@@ -42,6 +46,7 @@ class OrchestratorRunner:
         prompts_dir = Path("prompts")
         prompt_loader = PromptLoader(prompts_dir)
         knowledge_root = Path("knowledge")
+        stage_cache = StageCache(self._settings.runs_path / "_cache")
 
         planner = PlannerAgent(llm_client=llm_client, artifact_store=store, prompt_path=prompts_dir / "planner.md")
         architect = ArchitectAgent(llm_client=llm_client, artifact_store=store, prompt_path=prompts_dir / "architect.md")
@@ -60,7 +65,22 @@ class OrchestratorRunner:
         try:
             for node in day2_graph():
                 if node == "planner":
-                    state.planner_output = planner.run(state.user_prompt)
+                    planner_prompt = (prompts_dir / "planner.md").read_text(encoding="utf-8")
+                    planner_model = self._stage_model("planner")
+                    if self._settings.smart_enable_stage_cache:
+                        planner_key = stage_cache.make_key(
+                            "planner",
+                            {"prompt": state.user_prompt, "template": planner_prompt, "model": planner_model},
+                        )
+                        cached = stage_cache.get("planner", planner_key)
+                        if cached is not None:
+                            state.planner_output = PlannerOutput.model_validate(cached)
+                            self._persist_planner_artifacts(store, state.planner_output)
+                        else:
+                            state.planner_output = planner.run(state.user_prompt, model_override=planner_model)
+                            stage_cache.set("planner", planner_key, state.planner_output.model_dump())
+                    else:
+                        state.planner_output = planner.run(state.user_prompt, model_override=planner_model)
                 elif node == "retrieval":
                     state.retrieval_output = retriever.retrieve(state.user_prompt)
                     path = store.write_json_artifact("retrieval.json", state.retrieval_output.model_dump())
@@ -68,21 +88,69 @@ class OrchestratorRunner:
                 elif node == "architect":
                     if state.planner_output is None:
                         raise ValueError("Planner output missing")
-                    state.architect_output = architect.run(state.planner_output)
+                    architect_prompt = (prompts_dir / "architect.md").read_text(encoding="utf-8")
+                    architect_model = self._stage_model("architect")
+                    if self._settings.smart_enable_stage_cache:
+                        architect_key = stage_cache.make_key(
+                            "architect",
+                            {
+                                "planner_output": state.planner_output.model_dump(mode="json"),
+                                "template": architect_prompt,
+                                "model": architect_model,
+                            },
+                        )
+                        cached = stage_cache.get("architect", architect_key)
+                        if cached is not None:
+                            state.architect_output = ArchitectOutput.model_validate(cached)
+                            self._persist_architect_artifacts(store, state.architect_output)
+                        else:
+                            state.architect_output = architect.run(state.planner_output, model_override=architect_model)
+                            stage_cache.set("architect", architect_key, state.architect_output.model_dump())
+                    else:
+                        state.architect_output = architect.run(state.planner_output, model_override=architect_model)
                 elif node == "schema":
                     if state.architect_output is None:
                         raise ValueError("Architect output missing")
-                    state.schema_output = schema.run(state.architect_output)
+                    schema_prompt = (prompts_dir / "schema_agent.md").read_text(encoding="utf-8")
+                    schema_model = self._stage_model("schema")
+                    if self._settings.smart_enable_stage_cache:
+                        schema_key = stage_cache.make_key(
+                            "schema",
+                            {
+                                "architect_output": state.architect_output.model_dump(mode="json"),
+                                "template": schema_prompt,
+                                "model": schema_model,
+                            },
+                        )
+                        cached = stage_cache.get("schema", schema_key)
+                        if cached is not None:
+                            state.schema_output = SchemaOutput.model_validate(cached)
+                            self._persist_schema_artifacts(store, state.schema_output)
+                        else:
+                            state.schema_output = schema.run(state.architect_output, model_override=schema_model)
+                            stage_cache.set("schema", schema_key, state.schema_output.model_dump())
+                    else:
+                        state.schema_output = schema.run(state.architect_output, model_override=schema_model)
                 elif node == "api":
                     if state.architect_output is None or state.schema_output is None:
                         raise ValueError("Architecture or schema output missing")
                     retrieval_output = state.retrieval_output or retriever.retrieve(state.user_prompt)
-                    state.api_output = api_agent.run(state.architect_output, state.schema_output, retrieval_output)
+                    state.api_output = api_agent.run(
+                        state.architect_output,
+                        state.schema_output,
+                        retrieval_output,
+                        model_override=self._stage_model("api"),
+                    )
                 elif node == "frontend":
                     if state.planner_output is None or state.api_output is None:
                         raise ValueError("Planner or API output missing")
                     retrieval_output = state.retrieval_output or retriever.retrieve(state.user_prompt)
-                    state.frontend_output = frontend_agent.run(state.planner_output, state.api_output, retrieval_output)
+                    state.frontend_output = frontend_agent.run(
+                        state.planner_output,
+                        state.api_output,
+                        retrieval_output,
+                        model_override=self._stage_model("frontend"),
+                    )
                 elif node == "codegen":
                     if state.api_output is None or state.frontend_output is None:
                         raise ValueError("API or frontend output missing")
@@ -93,7 +161,10 @@ class OrchestratorRunner:
                     validation_path = store.write_json_artifact("validation_results.json", summary.model_dump())
                     store.append_manifest(validation_path)
                 elif node == "reviewer":
-                    state.review_output = reviewer.run(state)
+                    if self._should_run_reviewer(state):
+                        state.review_output = reviewer.run(state, model_override=self._stage_model("reviewer"))
+                    else:
+                        state.review_output = self._persist_skipped_review(store)
                 elif node == "correction":
                     self._apply_correction_loop(
                         state=state,
@@ -166,9 +237,8 @@ class OrchestratorRunner:
         feedback = [f"{issue.code}: {issue.suggested_fix}" for issue in critical_issues]
         targets = {issue.target_stage for issue in critical_issues}
 
-        # Bounded, targeted rerun of affected stage chain.
         if "schema" in targets and state.architect_output is not None:
-            state.schema_output = schema.run(state.architect_output)
+            state.schema_output = schema.run(state.architect_output, model_override=self._stage_model("schema"))
 
         needs_api = any(target in targets for target in {"schema", "api"})
         needs_frontend = any(target in targets for target in {"schema", "api", "frontend"})
@@ -183,6 +253,7 @@ class OrchestratorRunner:
                 retrieval_output,
                 reviewer_feedback=feedback,
                 artifact_prefix="04_api_corrected",
+                model_override=self._stage_model("api"),
             )
 
         if needs_frontend and state.planner_output is not None and state.api_output is not None:
@@ -192,6 +263,7 @@ class OrchestratorRunner:
                 retrieval_output,
                 reviewer_feedback=feedback,
                 artifact_prefix="05_frontend_corrected",
+                model_override=self._stage_model("frontend"),
             )
 
         if needs_codegen and state.api_output is not None and state.frontend_output is not None:
@@ -206,7 +278,14 @@ class OrchestratorRunner:
         validation_path = store.write_json_artifact("validation_results_corrected.json", summary.model_dump())
         store.append_manifest(validation_path)
 
-        state.review_output = reviewer.run(state, filename="07_review_corrected.json")
+        if self._should_run_reviewer(state):
+            state.review_output = reviewer.run(
+                state,
+                filename="07_review_corrected.json",
+                model_override=self._stage_model("reviewer"),
+            )
+        else:
+            state.review_output = self._persist_skipped_review(store, filename="07_review_corrected.json")
 
     def _run_validations(
         self,
@@ -243,3 +322,42 @@ class OrchestratorRunner:
             warnings=warnings,
             errors=errors,
         )
+
+    def _stage_model(self, stage: str) -> str:
+        model = getattr(self._settings, f"gemini_model_{stage}", None)
+        return model or self._settings.gemini_model
+
+    def _should_run_reviewer(self, state: RunState) -> bool:
+        if self._settings.smart_reviewer_on_clean:
+            return True
+        if state.validation_summary is None:
+            return True
+        return bool(state.validation_summary.errors or state.validation_summary.warnings)
+
+    def _persist_planner_artifacts(self, store: ArtifactStore, output: PlannerOutput) -> None:
+        json_path = store.write_json_artifact("01_planner.json", output.model_dump())
+        md_path = store.write_text_artifact("requirements.md", _to_requirements_markdown(output))
+        store.append_manifest(json_path)
+        store.append_manifest(md_path)
+
+    def _persist_architect_artifacts(self, store: ArtifactStore, output: ArchitectOutput) -> None:
+        json_path = store.write_json_artifact("02_architect.json", output.model_dump())
+        md_path = store.write_text_artifact("architecture.md", _to_architecture_markdown(output))
+        store.append_manifest(json_path)
+        store.append_manifest(md_path)
+
+    def _persist_schema_artifacts(self, store: ArtifactStore, output: SchemaOutput) -> None:
+        json_path = store.write_json_artifact("03_schema.json", output.model_dump())
+        sql_path = store.write_text_artifact("schema.sql", output.sql)
+        store.append_manifest(json_path)
+        store.append_manifest(sql_path)
+
+    def _persist_skipped_review(self, store: ArtifactStore, filename: str = "07_review.json") -> ReviewOutput:
+        output = ReviewOutput(
+            issues=[],
+            corrected_summary="Reviewer skipped by smart policy: validation was clean and no warnings.",
+            correction_needed=False,
+        )
+        path = store.write_json_artifact(filename, output.model_dump())
+        store.append_manifest(path)
+        return output

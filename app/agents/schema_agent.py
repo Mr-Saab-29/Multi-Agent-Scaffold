@@ -12,9 +12,13 @@ class SchemaAgent:
         self._store = artifact_store
         self._prompt_path = prompt_path
 
-    def run(self, architect_output: ArchitectOutput) -> SchemaOutput:
+    def run(self, architect_output: ArchitectOutput, model_override: str | None = None) -> SchemaOutput:
         system_prompt = self._prompt_path.read_text(encoding="utf-8")
-        _ = self._llm.generate_json(system_prompt=system_prompt, user_prompt=architect_output.model_dump_json())
+        _ = self._llm.generate_json(
+            system_prompt=system_prompt,
+            user_prompt=architect_output.model_dump_json(),
+            model=model_override,
+        )
 
         sql = _to_sql(architect_output)
         tables = [

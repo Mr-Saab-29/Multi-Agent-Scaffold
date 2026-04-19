@@ -11,9 +11,9 @@ class PlannerAgent:
         self._store = artifact_store
         self._prompt_path = prompt_path
 
-    def run(self, user_prompt: str) -> PlannerOutput:
+    def run(self, user_prompt: str, model_override: str | None = None) -> PlannerOutput:
         system_prompt = self._prompt_path.read_text(encoding="utf-8")
-        _ = self._llm.generate_json(system_prompt=system_prompt, user_prompt=user_prompt)
+        _ = self._llm.generate_json(system_prompt=system_prompt, user_prompt=user_prompt, model=model_override)
 
         app_name = _extract_app_name(user_prompt)
         requirements = [

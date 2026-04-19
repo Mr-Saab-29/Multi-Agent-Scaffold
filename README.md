@@ -36,6 +36,9 @@ prompt
 - Deterministic validation outside the LLM.
 - Reviewer-driven bounded correction loop.
 
+## Smart Policy
+- Stage-level model routing, cache reuse, and reviewer gating are documented in [smart_policy.md](/Users/saab/Documents/DSBA/Archive/M2/Personal Projects/Multi Agent App Scaffolder/smart_policy.md).
+
 ## Setup
 ```bash
 python -m venv .venv
@@ -123,7 +126,3 @@ make test
 - Richer templates and framework-specific codegen packs.
 - Better scoring calibration and historical eval tracking.
 
-## Screenshots (Placeholder)
-- `docs/screenshots/ui-main.png`
-- `docs/screenshots/ui-artifacts.png`
-- `docs/screenshots/ui-review-panel.png`

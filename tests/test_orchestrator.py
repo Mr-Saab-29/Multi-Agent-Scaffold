@@ -24,9 +24,13 @@ def test_orchestrator_runs_day3_pipeline() -> None:
 
 
 def test_correction_loop_runs_once(monkeypatch) -> None:
+    monkeypatch.setenv("SMART_REVIEWER_ON_CLEAN", "true")
+    from app.core.config import get_settings
+    get_settings.cache_clear()
+
     calls = {"count": 0}
 
-    def fake_run(self, state, filename="07_review.json"):
+    def fake_run(self, state, filename="07_review.json", model_override=None):
         calls["count"] += 1
         if calls["count"] == 1:
             output = ReviewOutput(

@@ -13,9 +13,13 @@ class ArchitectAgent:
         self._store = artifact_store
         self._prompt_path = prompt_path
 
-    def run(self, planner_output: PlannerOutput) -> ArchitectOutput:
+    def run(self, planner_output: PlannerOutput, model_override: str | None = None) -> ArchitectOutput:
         system_prompt = self._prompt_path.read_text(encoding="utf-8")
-        _ = self._llm.generate_json(system_prompt=system_prompt, user_prompt=planner_output.model_dump_json())
+        _ = self._llm.generate_json(
+            system_prompt=system_prompt,
+            user_prompt=planner_output.model_dump_json(),
+            model=model_override,
+        )
 
         entities = [
             EntitySpec(

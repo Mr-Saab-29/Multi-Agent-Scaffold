@@ -12,9 +12,17 @@ class Settings(BaseSettings):
 
     gemini_api_key: str | None = Field(default=None)
     gemini_model: str = Field(default="gemini-2.5-flash-lite")
+    gemini_model_planner: str | None = Field(default=None)
+    gemini_model_architect: str | None = Field(default=None)
+    gemini_model_schema: str | None = Field(default=None)
+    gemini_model_api: str | None = Field(default=None)
+    gemini_model_frontend: str | None = Field(default=None)
+    gemini_model_reviewer: str | None = Field(default=None)
     gemini_max_retries: int = Field(default=3)
     gemini_retry_base_delay_seconds: float = Field(default=0.8)
     gemini_retry_max_delay_seconds: float = Field(default=6.0)
+    smart_enable_stage_cache: bool = Field(default=True)
+    smart_reviewer_on_clean: bool = Field(default=False)
 
     runs_dir: str = Field(default="runs")
 

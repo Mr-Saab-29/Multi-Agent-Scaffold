@@ -11,9 +11,9 @@ class ReviewerAgent:
         self._store = artifact_store
         self._prompts = prompt_loader
 
-    def run(self, state: RunState, filename: str = "07_review.json") -> ReviewOutput:
+    def run(self, state: RunState, filename: str = "07_review.json", model_override: str | None = None) -> ReviewOutput:
         system_prompt = self._prompts.load("reviewer.md")
-        _ = self._llm.generate_json(system_prompt=system_prompt, user_prompt=state.user_prompt)
+        _ = self._llm.generate_json(system_prompt=system_prompt, user_prompt=state.user_prompt, model=model_override)
 
         issues: list[ReviewIssue] = []
 
