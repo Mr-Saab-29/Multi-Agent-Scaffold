@@ -37,7 +37,7 @@ prompt
 - Reviewer-driven bounded correction loop.
 
 ## Smart Policy
-- Stage-level model routing, cache reuse, and reviewer gating are documented in [smart_policy.md](/Users/saab/Documents/DSBA/Archive/M2/Personal Projects/Multi Agent App Scaffolder/smart_policy.md).
+- Stage-level model routing, cache reuse, and reviewer gating are documented in [smart_policy.md]
 
 ## Setup
 ```bash
