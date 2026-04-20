@@ -7,9 +7,10 @@ def force_fallback_llm(monkeypatch):
     monkeypatch.setenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 
     from app.core.config import get_settings
-    from app.api.routes import runner
+    from app.api.routes import async_manager, runner
 
     get_settings.cache_clear()
     runner._settings = get_settings()
+    async_manager._runner._settings = get_settings()
     yield
     get_settings.cache_clear()

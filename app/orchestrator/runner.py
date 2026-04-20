@@ -1,5 +1,6 @@
 import traceback
 from pathlib import Path
+from typing import Callable
 from uuid import uuid4
 
 from app.agents.api_agent import APIAgent
@@ -10,6 +11,7 @@ from app.agents.planner import PlannerAgent, _to_requirements_markdown
 from app.agents.reviewer import ReviewerAgent
 from app.agents.schema_agent import SchemaAgent
 from app.core.config import get_settings
+from app.core.metrics import llm_calls_total, runs_total
 from app.models.architect_models import ArchitectOutput
 from app.models.planner_models import PlannerOutput
 from app.models.review_models import ReviewOutput
@@ -35,7 +37,12 @@ class OrchestratorRunner:
     def create_run_id(self) -> str:
         return uuid4().hex
 
-    def run(self, user_prompt: str, run_id: str | None = None) -> RunState:
+    def run(
+        self,
+        user_prompt: str,
+        run_id: str | None = None,
+        event_callback: Callable[[dict], None] | None = None,
+    ) -> RunState:
         resolved_run_id = run_id or self.create_run_id()
         state = RunState(run_id=resolved_run_id, user_prompt=user_prompt, status="running")
         store = ArtifactStore(settings=self._settings, run_id=resolved_run_id)
@@ -64,6 +71,8 @@ class OrchestratorRunner:
 
         try:
             for node in day2_graph():
+                if event_callback is not None:
+                    event_callback({"type": "step_started", "run_id": state.run_id, "step": node})
                 if node == "planner":
                     planner_prompt = (prompts_dir / "planner.md").read_text(encoding="utf-8")
                     planner_model = self._stage_model("planner")
@@ -186,15 +195,27 @@ class OrchestratorRunner:
                     state.package_summary = package_output["summary"]
 
                 state.completed_steps.append(node)
+                if event_callback is not None:
+                    event_callback({"type": "step_completed", "run_id": state.run_id, "step": node})
 
             state.status = "completed"
         except Exception as exc:  # noqa: BLE001
             state.status = "failed"
             state.errors.append(str(exc))
             state.errors.append(traceback.format_exc())
+            if event_callback is not None:
+                event_callback({"type": "run_failed", "run_id": state.run_id, "error": str(exc)})
 
         state.llm_backend = llm_client.backend
         state.llm_fallback_reason = llm_client.fallback_reason
+        state.llm_call_count = llm_client.call_count
+        state.llm_estimated_input_tokens = llm_client.estimated_input_tokens
+        state.llm_estimated_output_tokens = llm_client.estimated_output_tokens
+        state.llm_estimated_cost_usd = round(llm_client.estimated_cost_usd, 6)
+        state.governance_budget_exceeded = llm_client.budget_exceeded
+
+        runs_total.labels("sync", state.status).inc()
+        llm_calls_total.inc(state.llm_call_count)
 
         run_state_path = store.write_json_artifact("run_state.json", state.model_dump(mode="json"))
         store.append_manifest(run_state_path)
@@ -202,6 +223,8 @@ class OrchestratorRunner:
         state.artifact_manifest = ArtifactManifest(files=manifest_data.get("files", []))
 
         store.write_json_artifact("run_state.json", state.model_dump(mode="json"))
+        if event_callback is not None:
+            event_callback({"type": "run_completed", "run_id": state.run_id, "status": state.status})
         return state
 
     def get_run(self, run_id: str) -> RunState | None:

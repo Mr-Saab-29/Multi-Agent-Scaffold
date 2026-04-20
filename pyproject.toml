@@ -12,7 +12,8 @@ dependencies = [
   "python-dotenv>=1.0.1",
   "google-genai>=1.12.1",
   "requests>=2.32.0",
-  "streamlit>=1.42.0"
+  "streamlit>=1.42.0",
+  "prometheus-client>=0.21.0"
 ]
 
 [project.optional-dependencies]

@@ -62,6 +62,24 @@ uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 Open `http://127.0.0.1:8501`.
 
+## Async Runs + Human Approval
+Submit async run:
+```bash
+curl -X POST http://127.0.0.1:8000/scaffold/run/async \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"Build a booking app","require_planner_approval":true}'
+```
+
+Approve paused run:
+```bash
+curl -X POST http://127.0.0.1:8000/scaffold/run/<run_id>/approve
+```
+
+Stream real-time events (SSE):
+```bash
+curl -N http://127.0.0.1:8000/scaffold/run/<run_id>/events
+```
+
 ## API Usage
 ### Start run
 ```bash
@@ -84,6 +102,32 @@ curl http://127.0.0.1:8000/scaffold/run/<run_id>/artifacts
 ```bash
 curl "http://127.0.0.1:8000/scaffold/run/<run_id>/artifacts/content?path=<absolute_artifact_path>"
 ```
+
+### Metrics (Prometheus)
+```bash
+curl http://127.0.0.1:8000/metrics
+```
+
+## Governance + Cost Controls
+LLM usage is tracked in run state:
+- `llm_call_count`
+- `llm_estimated_input_tokens`
+- `llm_estimated_output_tokens`
+- `llm_estimated_cost_usd`
+- `governance_budget_exceeded`
+
+Control limits in `.env`:
+- `GOVERNANCE_MAX_LLM_CALLS`
+- `GOVERNANCE_MAX_COST_USD`
+- `GOVERNANCE_INPUT_COST_PER_1K_TOKENS_USD`
+- `GOVERNANCE_OUTPUT_COST_PER_1K_TOKENS_USD`
+
+When budget is exceeded, the system switches to deterministic fallback.
+
+## Observability
+- Structured run lifecycle logs in API routes.
+- Prometheus metrics endpoint at `/metrics`.
+- Real-time run event stream via SSE: `/scaffold/run/{run_id}/events`.
 
 ## UI Demo Usage
 1. Start API.
@@ -112,17 +156,26 @@ make ui
 make demo
 make eval
 make test
+make ci
+make docker-build
+make docker-up
+make docker-down
 ```
+
+## CI/CD + Deployment
+- GitHub Actions CI: `.github/workflows/ci.yml`
+- Container packaging: `Dockerfile`, `docker-compose.yml`, `.dockerignore`
+- Kubernetes starter manifest: `deploy/k8s/deployment.yaml`
 
 ## Limitations
 - Code generation is stub-level only.
 - Correction loop is bounded to one pass.
 - UI is intentionally minimal.
 - No DB/job queue/auth/frontend build pipeline.
+- Async queue is in-process (thread pool) and not distributed yet.
 
 ## Future Improvements
 - Async run execution + live step streaming.
 - Stronger stage-specific reviewer heuristics.
 - Richer templates and framework-specific codegen packs.
 - Better scoring calibration and historical eval tracking.
-

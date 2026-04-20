@@ -1,4 +1,4 @@
-.PHONY: install api ui demo eval test
+.PHONY: install api ui demo eval test ci docker-build docker-up docker-down
 
 install:
 	python -m venv .venv
@@ -18,3 +18,15 @@ eval:
 
 test:
 	. .venv/bin/activate && python -m pytest -q
+
+ci:
+	. .venv/bin/activate && python -m pytest -q
+
+docker-build:
+	docker build -t multi-agent-app-scaffolder:latest .
+
+docker-up:
+	docker compose up --build
+
+docker-down:
+	docker compose down

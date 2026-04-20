@@ -21,8 +21,13 @@ class Settings(BaseSettings):
     gemini_max_retries: int = Field(default=3)
     gemini_retry_base_delay_seconds: float = Field(default=0.8)
     gemini_retry_max_delay_seconds: float = Field(default=6.0)
+    governance_max_llm_calls: int = Field(default=20)
+    governance_max_cost_usd: float = Field(default=0.25)
+    governance_input_cost_per_1k_tokens_usd: float = Field(default=0.0005)
+    governance_output_cost_per_1k_tokens_usd: float = Field(default=0.0015)
     smart_enable_stage_cache: bool = Field(default=True)
     smart_reviewer_on_clean: bool = Field(default=False)
+    async_max_workers: int = Field(default=4)
 
     runs_dir: str = Field(default="runs")
 

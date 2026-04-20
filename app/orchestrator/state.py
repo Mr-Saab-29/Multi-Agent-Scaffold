@@ -13,7 +13,7 @@ from app.models.schema_models import SchemaOutput
 from app.models.shared import StrictModel
 from app.models.validation_models import ValidationSummary
 
-RunStatus = Literal["pending", "running", "completed", "failed"]
+RunStatus = Literal["pending", "queued", "running", "paused", "completed", "failed"]
 
 
 class ArtifactManifest(StrictModel):
@@ -25,6 +25,8 @@ class RunState(StrictModel):
     user_prompt: str = Field(min_length=1)
     llm_backend: str = Field(default="fallback", min_length=1)
     llm_fallback_reason: str | None = None
+    approval_required: bool = False
+    approval_granted: bool = True
     retrieval_output: RetrievalOutput | None = None
     planner_output: PlannerOutput | None = None
     architect_output: ArchitectOutput | None = None
@@ -35,6 +37,11 @@ class RunState(StrictModel):
     validation_summary: ValidationSummary | None = None
     review_output: ReviewOutput | None = None
     correction_count: int = 0
+    llm_call_count: int = 0
+    llm_estimated_input_tokens: int = 0
+    llm_estimated_output_tokens: int = 0
+    llm_estimated_cost_usd: float = 0.0
+    governance_budget_exceeded: bool = False
     package_summary: dict[str, str | int | bool | None] = Field(default_factory=dict)
     completed_steps: list[str] = Field(default_factory=list)
     status: RunStatus = "pending"

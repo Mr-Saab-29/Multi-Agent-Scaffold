@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scaffolder-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scaffolder-api
+  template:
+    metadata:
+      labels:
+        app: scaffolder-api
+    spec:
+      containers:
+        - name: api
+          image: your-registry/multi-agent-app-scaffolder:latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: scaffolder-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: scaffolder-api
+spec:
+  selector:
+    app: scaffolder-api
+  ports:
+    - port: 80
+      targetPort: 8000

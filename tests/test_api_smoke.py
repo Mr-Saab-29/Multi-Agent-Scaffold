@@ -1,3 +1,5 @@
+import time
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -53,3 +55,32 @@ def test_run_and_fetch() -> None:
     )
     assert content_resp.status_code == 200
     assert "content" in content_resp.json()
+
+
+def test_async_run_with_approval() -> None:
+    client = TestClient(app)
+    submit = client.post(
+        "/scaffold/run/async",
+        json={"prompt": "Build an admin app", "require_planner_approval": True},
+    )
+    assert submit.status_code == 200
+    run_id = submit.json()["run_id"]
+    assert submit.json()["approval_required"] is True
+
+    paused = client.get(f"/scaffold/run/{run_id}")
+    assert paused.status_code == 200
+    assert paused.json()["state"]["status"] == "paused"
+
+    approve = client.post(f"/scaffold/run/{run_id}/approve")
+    assert approve.status_code == 200
+    assert approve.json()["approved"] is True
+
+    # wait briefly for async completion
+    for _ in range(40):
+        fetched = client.get(f"/scaffold/run/{run_id}")
+        assert fetched.status_code == 200
+        status = fetched.json()["state"]["status"]
+        if status in {"completed", "failed"}:
+            break
+        time.sleep(0.05)
+    assert status == "completed"

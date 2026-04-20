@@ -88,6 +88,8 @@ def main() -> None:
         value="Build a marketplace app for local artisans with orders and reviews",
         height=120,
     )
+    run_mode_async = st.checkbox("Use async run endpoint", value=False)
+    require_planner_approval = st.checkbox("Require planner approval (async only)", value=False)
 
     col_run, col_refresh = st.columns(2)
 
@@ -101,9 +103,20 @@ def main() -> None:
             else:
                 with st.spinner("Running full pipeline..."):
                     try:
-                        run_resp = _api_post(api_base, "/scaffold/run", {"prompt": prompt.strip()})
+                        if run_mode_async:
+                            run_resp = _api_post(
+                                api_base,
+                                "/scaffold/run/async",
+                                {
+                                    "prompt": prompt.strip(),
+                                    "require_planner_approval": require_planner_approval,
+                                },
+                            )
+                        else:
+                            run_resp = _api_post(api_base, "/scaffold/run", {"prompt": prompt.strip()})
                         st.session_state["last_run_id"] = run_resp["run_id"]
-                        st.success(f"Run started and completed: {run_resp['run_id']}")
+                        st.session_state["event_offset"] = 0
+                        st.success(f"Run accepted: {run_resp['run_id']}")
                     except requests.HTTPError as exc:
                         st.error(f"Run failed: {exc.response.text}")
                     except Exception as exc:  # noqa: BLE001
@@ -120,6 +133,13 @@ def main() -> None:
         return
 
     st.caption(f"Inspecting run: `{active_run_id}`")
+
+    if st.button("Approve Run (if paused)"):
+        try:
+            approve = _api_post(api_base, f"/scaffold/run/{active_run_id}/approve", {})
+            st.success(f"Approval submitted: {approve}")
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Approval failed: {exc}")
 
     try:
         run_state_resp = _api_get(api_base, f"/scaffold/run/{active_run_id}")
@@ -138,11 +158,34 @@ def main() -> None:
             "status": state.get("status"),
             "llm_backend": state.get("llm_backend"),
             "llm_fallback_reason": state.get("llm_fallback_reason"),
+            "llm_call_count": state.get("llm_call_count"),
+            "estimated_cost_usd": state.get("llm_estimated_cost_usd"),
+            "governance_budget_exceeded": state.get("governance_budget_exceeded"),
             "correction_count": state.get("correction_count"),
         }
     )
 
     _render_pipeline_progress(state.get("completed_steps", []))
+
+    if "event_offset" not in st.session_state:
+        st.session_state["event_offset"] = 0
+    if st.button("Fetch New Events"):
+        try:
+            events_resp = requests.get(
+                f"{api_base}/scaffold/run/{active_run_id}/events",
+                params={"since": st.session_state["event_offset"]},
+                timeout=20,
+            )
+            if events_resp.ok:
+                lines = [line[6:] for line in events_resp.text.splitlines() if line.startswith("data: ")]
+                events = [json.loads(line) for line in lines if line.strip()]
+                if events:
+                    st.session_state["event_offset"] = events[-1]["index"] + 1
+                st.write({"new_events": len(events), "events": events[-10:]})
+            else:
+                st.warning(f"Event fetch failed: {events_resp.text}")
+        except Exception as exc:  # noqa: BLE001
+            st.warning(f"Event fetch failed: {exc}")
 
     left, right = st.columns(2)
     with left:
